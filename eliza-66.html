@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; form-action 'none'; base-uri 'none';">
+<title>ELIZA — MIT AI Lab, 1966</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d0d0b;
+    --bg2:       #141410;
+    --bg3:       #1a1a15;
+    --amber:     #e8a030;
+    --amber-dim: #8a5c18;
+    --amber-faint: #3a2808;
+    --amber-glow: rgba(232,160,48,0.08);
+    --green:     #4ec94e;
+    --border:    rgba(232,160,48,0.18);
+    --border-hi: rgba(232,160,48,0.4);
+    --font:      'IBM Plex Mono', 'Courier New', monospace;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--amber);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Scanline overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* Vignette */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.55) 100%);
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  .page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem 3rem;
+  }
+
+  /* ── Header ── */
+  .header {
+    width: 100%;
+    max-width: 680px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.25rem;
+    margin-bottom: 1.5rem;
+    animation: fadein 0.8s ease both;
+  }
+
+  .header-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  h1 {
+    font-size: 2.4rem;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-shadow: 0 0 18px rgba(232,160,48,0.5);
+  }
+
+  .provenance {
+    font-size: 11px;
+    font-weight: 300;
+    color: var(--amber-dim);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .subtitle {
+    margin-top: 0.4rem;
+    font-size: 12px;
+    font-weight: 300;
+    color: var(--amber-dim);
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Context panel ── */
+  .context {
+    width: 100%;
+    max-width: 680px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    padding: 1.2rem 1.4rem;
+    margin-bottom: 1.5rem;
+    animation: fadein 0.9s 0.1s ease both;
+    position: relative;
+  }
+
+  .context-label {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber-dim);
+    margin-bottom: 0.7rem;
+  }
+
+  .context p {
+    font-size: 12.5px;
+    font-weight: 300;
+    font-style: italic;
+    color: var(--amber);
+    opacity: 0.75;
+    line-height: 1.75;
+  }
+
+  .context p + p { margin-top: 0.6rem; }
+
+  .context-dismiss {
+    position: absolute;
+    top: 0.8rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    color: var(--amber-dim);
+    cursor: pointer;
+    font-family: var(--font);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 2px 6px;
+    transition: color 0.2s;
+  }
+  .context-dismiss:hover { color: var(--amber); }
+
+  .context.hidden {
+    display: none;
+  }
+
+  /* ── Terminal window ── */
+  .terminal {
+    width: 100%;
+    max-width: 680px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    animation: fadein 1s 0.2s ease both;
+    flex: 1;
+  }
+
+  .term-bar {
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+    padding: 0.5rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .term-bar-label {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber-dim);
+  }
+
+  .term-status {
+    font-size: 10px;
+    color: var(--green);
+    letter-spacing: 0.08em;
+  }
+
+  .term-status::before {
+    content: '● ';
+    font-size: 8px;
+  }
+
+  /* ── Log ── */
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.2rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-height: 340px;
+    max-height: 460px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--amber-dim) transparent;
+  }
+
+  #log::-webkit-scrollbar { width: 4px; }
+  #log::-webkit-scrollbar-thumb { background: var(--amber-dim); }
+
+  .entry {
+    display: grid;
+    grid-template-columns: 5.5rem 1fr;
+    gap: 0.5rem;
+    align-items: baseline;
+    animation: linein 0.15s ease both;
+    padding: 2px 0;
+  }
+
+  .entry + .entry { border-top: 1px solid rgba(232,160,48,0.04); }
+
+  .who {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding-top: 1px;
+    flex-shrink: 0;
+  }
+
+  .who.eliza { color: var(--amber); }
+  .who.user  { color: var(--amber-dim); }
+
+  .text {
+    font-size: 13.5px;
+    font-weight: 300;
+    line-height: 1.7;
+  }
+
+  .entry.eliza-entry .text { color: var(--amber); }
+  .entry.user-entry  .text { color: var(--amber-dim); }
+
+  /* ── Prompt ── */
+  .prompt-row {
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0.7rem 1rem;
+    gap: 0.6rem;
+    flex-shrink: 0;
+  }
+
+  .prompt-sigil {
+    color: var(--amber);
+    font-size: 13px;
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  #input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--amber);
+    font-family: var(--font);
+    font-size: 13.5px;
+    font-weight: 300;
+    caret-color: var(--amber);
+  }
+
+  #input::placeholder { color: var(--amber-dim); opacity: 0.5; }
+
+  #send {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--amber-dim);
+    font-family: var(--font);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+
+  #send:hover {
+    border-color: var(--border-hi);
+    color: var(--amber);
+    background: var(--amber-glow);
+  }
+
+  /* ── Footer ── */
+  .footer {
+    width: 100%;
+    max-width: 680px;
+    margin-top: 1.2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    animation: fadein 1.1s 0.3s ease both;
+  }
+
+  .footer-note {
+    font-size: 10.5px;
+    font-weight: 300;
+    color: var(--amber-dim);
+    opacity: 0.6;
+    line-height: 1.7;
+    max-width: 420px;
+  }
+
+  .footer-note a {
+    color: var(--amber-dim);
+    text-underline-offset: 3px;
+  }
+
+  .footer-reset {
+    background: none;
+    border: none;
+    font-family: var(--font);
+    font-size: 10.5px;
+    color: var(--amber-dim);
+    opacity: 0.5;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+    align-self: flex-start;
+    padding: 0;
+  }
+
+  .footer-reset:hover { opacity: 1; }
+
+  .page-footer {
+    width: 100%;
+    max-width: 680px;
+    border-top: 0.5px solid var(--border);
+    margin-top: 2rem;
+    padding-top: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    font-size: 10.5px;
+    font-weight: 300;
+    color: var(--amber-dim);
+    opacity: 0.5;
+    animation: fadein 1.2s 0.4s ease both;
+  }
+
+  .page-footer a {
+    color: var(--amber-dim);
+    text-decoration: none;
+    border-bottom: 0.5px solid var(--amber-dim);
+    padding-bottom: 1px;
+    transition: opacity 0.2s;
+  }
+
+  .page-footer a:hover { opacity: 1; }
+
+  @keyframes fadein {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes linein {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  @media (max-width: 500px) {
+    h1 { font-size: 1.8rem; }
+    #log { max-height: 380px; }
+    .entry { grid-template-columns: 4.2rem 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="header">
+    <div class="header-top">
+      <h1>ELIZA</h1>
+      <span class="provenance">MIT AI Laboratory &middot; 1966</span>
+    </div>
+    <div class="subtitle">Joseph Weizenbaum &mdash; Natural Language Processing Program &mdash; DOCTOR Script</div>
+  </header>
+
+  <div class="context" id="context">
+    <div class="context-label">What is this?</div>
+    <button class="context-dismiss" id="dismiss-btn" title="Dismiss">[ dismiss ]</button>
+    <p>ELIZA was written by Joseph Weizenbaum at MIT between 1964 and 1966 &mdash; one of the first programs capable of holding a conversation in natural language. It works by matching patterns in what you type and reflecting them back as questions, mimicking the technique of a Rogerian psychotherapist.</p>
+    <p>Weizenbaum was disturbed to find that people quickly formed emotional attachments to the program, confiding in it and attributing understanding to it. He wrote a book about it, <em>Computer Power and Human Reason</em> (1976), arguing that the appearance of intelligence is not intelligence. ELIZA has no comprehension of what you say. It only recognizes patterns.</p>
+    <p>Talk to it as you would a therapist. Notice where it breaks down. Notice where it doesn&rsquo;t.</p>
+  </div>
+
+  <div class="terminal">
+    <div class="term-bar">
+      <span class="term-bar-label">SESSION ACTIVE</span>
+      <span class="term-status">CONNECTED</span>
+    </div>
+    <div id="log"></div>
+    <div class="prompt-row">
+      <span class="prompt-sigil">&gt;_</span>
+      <input id="input" type="text" placeholder="Type and press Enter&hellip;" autocomplete="off" spellcheck="false" maxlength="500" aria-label="Your message to ELIZA" />
+      <button id="send">SEND</button>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div class="footer-note">
+      ELIZA uses keyword pattern matching and pronoun reflection &mdash; no machine learning, no memory between sessions.
+      Reference: Weizenbaum, J. (1966). ELIZA &mdash; A computer program for the study of natural language communication between man and machine.
+      <em>Communications of the ACM, 9</em>(1), 36&ndash;45.
+    </div>
+    <button class="footer-reset" id="reset-btn">[ reset session ]</button>
+  </footer>
+
+  <div class="page-footer">
+    <span>For Educational Purposes Only &middot; <em>Virtual Intelligence</em> essay series</span>
+    <a href="https://chorrocks.substack.com/">Read the full series &#8599;</a>
+  </div>
+
+<noscript><p style="color:#e8a030;padding:2rem;text-align:center;">ELIZA requires JavaScript to run.</p></noscript>
+</div>
+<script>
+const REFLECTIONS = {
+  "am":"are","was":"were","i":"you","i'd":"you'd","i've":"you've","i'll":"you'll",
+  "my":"your","are":"am","you've":"i've","you'll":"i'll","your":"my","yours":"mine",
+  "you":"me","me":"you","myself":"yourself","yourself":"myself"
+};
+
+function reflect(s) {
+  return s.split(/\b/).map(w => REFLECTIONS[w.toLowerCase()] || w).join('');
+}
+
+const SCRIPT = [
+  { key:/\bsorry\b/i, rank:5, decomps:[
+    [/.*/, ["Please don't apologize.","Apologies are not necessary.","What feelings do you have when you apologize?","I am not interested in apologies."]]
+  ]},
+  { key:/\bremember\b/i, rank:5, decomps:[
+    [/.*i remember (.*)/i, ["Do you often think of {1}?","Does thinking of {1} bring anything else to mind?","Why do you recall {1} right now?","What in the present situation reminds you of {1}?"]],
+    [/.*do you remember (.*)/i, ["Did you think I would forget {1}?","Why do you think I should recall {1}?","What about {1}?","You mentioned {1} — tell me more."]],
+    [/.*/, ["You mentioned remembering. What comes to mind?","Do you often find yourself remembering things?"]]
+  ]},
+  { key:/\bdream/i, rank:4, decomps:[
+    [/.*i dreamed? (.*)/i, ["Really — {1}?","Have you ever fantasized about {1} while you were awake?","Have you dreamed of {1} before?","What does that dream suggest to you?"]],
+    [/.*/, ["What does that dream suggest to you?","Do you dream often?","What persons appear in your dreams?","Are you disturbed by your dreams?"]]
+  ]},
+  { key:/\bperhaps\b/i, rank:3, decomps:[
+    [/.*/, ["You don't seem quite certain.","Why the uncertain tone?","Can't you be more definite?","You aren't sure?","Don't you know?"]]
+  ]},
+  { key:/\bname\b/i, rank:15, decomps:[
+    [/.*/, ["I am not interested in names.","I've told you before, I don't care about names — please go on."]]
+  ]},
+  { key:/\bdie\b|\bdead\b|\bdeath\b/i, rank:6, decomps:[
+    [/.*/, ["Does the thought of death frighten you?","Does talking about death disturb you?","What is it about death that concerns you?","Tell me more about that."]]
+  ]},
+  { key:/\bsuicid/i, rank:10, decomps:[
+    [/.*/, ["Are you serious?","Have you thought about this before?","I'm concerned — can you tell me more?"]]
+  ]},
+  { key:/\blike\b/i, rank:3, decomps:[
+    [/.*i (?:am |don't |do not |can't )?like (.*)/i, ["Do others in your life like {1}?","What is it about {1} you enjoy?","Tell me more about {1}."]],
+    [/.*what is it like (.*)/i, ["Tell me, what is it like {1}?","Why do you ask about what it is like {1}?"]],
+    [/.*/, ["What comes to mind when you think about liking things?"]]
+  ]},
+  { key:/\b(mother|mom|mum)\b/i, rank:7, decomps:[
+    [/.*/, ["Tell me more about your mother.","How do you get along with your mother?","How does that make you feel about your family?","What is the relationship like?"]]
+  ]},
+  { key:/\b(father|dad)\b/i, rank:7, decomps:[
+    [/.*/, ["Tell me more about your father.","Does your father figure often in your thoughts?","How do you feel about your father?","What is your relationship with him like?"]]
+  ]},
+  { key:/\b(brother|sister|sibling)\b/i, rank:5, decomps:[
+    [/.*/, ["Tell me about your siblings.","Did you have a close relationship?","How do you feel about that relationship?"]]
+  ]},
+  { key:/\bfriend\b/i, rank:4, decomps:[
+    [/.*my friend (.*)/i, ["Tell me more about your friend {1}.","How long have you known {1}?","How do you feel about {1}?"]],
+    [/.*/, ["Tell me about your friendships.","What is it about your friends that you want to discuss?"]]
+  ]},
+  { key:/\bcomputer\b/i, rank:50, decomps:[
+    [/.*/, ["Do computers worry you?","Why do you mention computers?","What do you think machines have to do with your problem?","Don't you think computers can help people?","What about machines worries you?"]]
+  ]},
+  { key:/\bam i\b/i, rank:4, decomps:[
+    [/am i (.*)/i, ["Do you believe you are {1}?","Would you want to be {1}?","Do you wish I would tell you you are {1}?","What would it mean if you were {1}?"]]
+  ]},
+  { key:/\bare you\b/i, rank:4, decomps:[
+    [/are you (.*)/i, ["Why are you interested in whether I am {1}?","Would you prefer if I were not {1}?","Perhaps I am {1} in your fantasies.","Do you sometimes think I am {1}?"]]
+  ]},
+  { key:/\byour\b/i, rank:3, decomps:[
+    [/.*your (.*)/i, ["Why are you concerned about my {1}?","What about your own {1}?","Are you worried about someone else's {1}?","Really — my {1}?"]]
+  ]},
+  { key:/\balways\b/i, rank:1, decomps:[
+    [/.*/, ["Can you think of a specific example?","When?","Really, always?","Can you elaborate on that?"]]
+  ]},
+  { key:/\b(i think|i believe)\b/i, rank:3, decomps:[
+    [/.*i (think|believe) (.*)/i, ["Do you really think so?","But you are not sure you {1}?","Do you doubt that {2}?","What makes you think that?"]]
+  ]},
+  { key:/\bi feel\b/i, rank:5, decomps:[
+    [/i feel (.*)/i, ["Tell me more about feeling {1}.","Do you often feel {1}?","Does feeling {1} concern you?","How long have you felt {1}?"]],
+    [/.*/, ["Tell me more about your feelings."]]
+  ]},
+  { key:/\b(i'm|i am)\b/i, rank:4, decomps:[
+    [/(?:i'm|i am) (.*)/i, ["Is it because you are {1} that you came to me?","How long have you been {1}?","Do you believe it is normal to be {1}?","Do you enjoy being {1}?"]]
+  ]},
+  { key:/\b(i want|i need|i wish)\b/i, rank:4, decomps:[
+    [/(?:i want|i need|i wish) ?(.*)/i, ["What would it mean if you got {1}?","Why do you want {1}?","Suppose you soon got {1} — what then?","What if you never got {1}?","What would getting {1} mean to you?"]]
+  ]},
+  { key:/\bi can't\b/i, rank:4, decomps:[
+    [/i can't (.*)/i, ["How do you know you can't {1}?","Have you tried?","Perhaps you could {1} now.","What if you could {1}?"]]
+  ]},
+  { key:/\bi don't\b/i, rank:4, decomps:[
+    [/i don't (.*)/i, ["Don't you really {1}?","Why don't you {1}?","Do you wish to {1}?","Does it concern you that you don't {1}?"]]
+  ]},
+  { key:/\bhappy\b|\bjoy\b|\belated\b/i, rank:3, decomps:[
+    [/.*/, ["I'm glad to hear that. How did that come about?","Why do you feel happy right now?","Tell me more.","That's interesting — go on."]]
+  ]},
+  { key:/\bsad\b|\bunhappy\b|\bdepressed\b|\bmelancholy\b/i, rank:5, decomps:[
+    [/.*/, ["I'm sorry to hear that. Tell me more.","Do you often feel this way?","What do you think is the cause?","How long has this been going on?"]]
+  ]},
+  { key:/\bworri|anxious|anxiety/i, rank:4, decomps:[
+    [/.*about (.*)/i, ["Why does {1} worry you?","Is there something specific about {1}?","What would happen if {1}?"]],
+    [/.*/, ["What are you worried about?","Tell me more about your anxiety.","How long have you felt this way?"]]
+  ]},
+  { key:/\bhello\b|\bhi\b|\bhey\b/i, rank:10, decomps:[
+    [/.*/, ["Hello. How are you feeling today?","Hi there. What's on your mind?","Hello — please tell me your problem."]]
+  ]},
+  { key:/\bbye\b|\bgoodbye\b|\bquit\b/i, rank:50, decomps:[
+    [/.*/, ["Goodbye. It was nice talking with you.","Goodbye — I hope I've been of some help.","Thank you for talking with me. Goodbye."]]
+  ]},
+  { key:/\bbecause\b/i, rank:5, decomps:[
+    [/.*because (.*)/i, ["Is that the real reason?","Does any other reason come to mind?","Does that reason seem to explain anything else?","What other reasons might there be?"]]
+  ]},
+  { key:/\beveryone\b|\beverybody\b|\bnobody\b|\bno one\b/i, rank:5, decomps:[
+    [/.*/, ["Really, everyone?","Surely not everyone.","Can you think of anyone in particular?","Who, specifically?","You are thinking of a special person, perhaps?"]]
+  ]},
+  { key:/\byes\b/i, rank:2, decomps:[
+    [/.*/, ["You seem quite certain.","I understand. Tell me more.","I see — go on.","Why are you so sure?"]]
+  ]},
+  { key:/\bno\b/i, rank:2, decomps:[
+    [/.*/, ["You are being a bit negative.","Why not?","Are you saying no just to be negative?","Why 'no'?"]]
+  ]},
+  { key:/\bmy\b/i, rank:2, decomps:[
+    [/.*my (.*)/i, ["Why do you say your {1}?","Does it worry you to discuss your {1}?","Tell me more about your {1}."]]
+  ]},
+  { key:/\bwhy\b/i, rank:2, decomps:[
+    [/why (?:can't|don't|won't)? ?(?:i|you) (.*)/i, ["Do you think you should {1}?","Do you believe that?","Perhaps there's a reason."]],
+    [/.*/, ["That's an interesting question. Why do you ask?","Tell me more about why."]]
+  ]},
+  { key:/\bhow\b/i, rank:2, decomps:[
+    [/.*/, ["How do you suppose?","Perhaps you can answer your own question.","What is it you're really asking?"]]
+  ]},
+  { key:/\bwhat\b/i, rank:2, decomps:[
+    [/.*/, ["Why do you ask?","Does that question interest you?","What is it you really want to know?","What do you think?"]]
+  ]},
+  { key:/\bproblem\b|\btroubl/i, rank:5, decomps:[
+    [/.*my (?:problem|trouble) (?:is )?(.*)/i, ["Tell me more about {1}.","Why does {1} trouble you?","Can you be more specific?"]],
+    [/.*/, ["I'd like to hear more about this.","Please tell me more.","Tell me about this problem."]]
+  ]},
+  { key:/\bwork\b|\bjob\b/i, rank:3, decomps:[
+    [/.*/, ["Tell me about your work.","Does your work concern you?","How do your colleagues affect you?","How does that make you feel?"]]
+  ]},
+  { key:/\blove\b/i, rank:6, decomps:[
+    [/.*i love (.*)/i, ["Tell me more about your feelings toward {1}.","Do you feel that {1} loves you in return?","How does loving {1} affect you?"]],
+    [/.*/, ["Tell me more about love in your life.","Why do you bring up love?"]]
+  ]},
+  { key:/\bhate\b|\banger\b|\bangry\b|\bfurious\b/i, rank:5, decomps:[
+    [/.*i (?:hate|am angry at|am furious at) (.*)/i, ["Why do you feel so strongly about {1}?","What has {1} done to make you feel this way?","Does hating {1} serve you?"]],
+    [/.*/, ["Tell me more about these feelings.","What causes you to feel this way?"]]
+  ]},
+  { key:/\balone\b|\blonely\b|\bloneliness\b/i, rank:5, decomps:[
+    [/.*/, ["Tell me about your loneliness.","How long have you felt alone?","Do you think others feel this way too?","What makes you feel lonely?"]]
+  ]}
+];
+
+const FALLBACKS = [
+  "Please go on.","Tell me more about that.","In what way?",
+  "What feelings does that bring up?","What does that suggest to you?",
+  "I see. And what does that tell you?","Does that concern you?",
+  "What else comes to mind?","I'm not sure I follow — could you elaborate?",
+  "And how does that make you feel?","Very interesting. Please continue.",
+  "Tell me more.","Can you elaborate on that?","How long have you felt this way?",
+  "What brought that to mind just now?","Does that happen often?"
+];
+
+const MEMORY_TEMPLATES = [
+  "Earlier you mentioned {0} — what does that bring to mind now?",
+  "Let's return to {0} for a moment.",
+  "You mentioned {0} before — can you tell me more about that?",
+  "A moment ago you said {0}. What does that mean to you?"
+];
+
+let scriptIndices = {};
+let fallbackIdx = 0;
+let memoryStore = [];
+
+function fillTemplate(tpl, caps) {
+  return tpl.replace(/\{(\d+)\}/g, (_, n) => reflect((caps[+n] || '').trim()));
+}
+
+function elizaRespond(input) {
+  const s = input.trim().toLowerCase().replace(/[!?.]+$/, '').trim();
+  let best = null, bestRank = -1;
+
+  for (const rule of SCRIPT) {
+    if (rule.key.test(s) && rule.rank > bestRank) {
+      bestRank = rule.rank;
+      best = rule;
+    }
+  }
+
+  if (best) {
+    const rkey = best.key.toString();
+    if (!scriptIndices[rkey]) scriptIndices[rkey] = {};
+    for (const [decomp, responses] of best.decomps) {
+      const m = s.match(decomp);
+      if (m) {
+        const prev = scriptIndices[rkey][decomp.toString()] || 0;
+        const tpl = responses[prev % responses.length];
+        scriptIndices[rkey][decomp.toString()] = prev + 1;
+        const resp = fillTemplate(tpl, m);
+        if (m[1] && m[1].length > 3 && memoryStore.length < 20) memoryStore.push(m[1]);
+        return resp;
+      }
+    }
+  }
+
+  if (memoryStore.length >= 2 && Math.random() < 0.28) {
+    const mem = memoryStore.splice(0,1)[0];
+    return MEMORY_TEMPLATES[Math.floor(Math.random()*MEMORY_TEMPLATES.length)]
+      .replace('{0}', reflect(mem));
+  }
+
+  const fb = FALLBACKS[fallbackIdx % FALLBACKS.length];
+  fallbackIdx++;
+  return fb;
+}
+
+function addEntry(text, who) {
+  const log = document.getElementById('log');
+  const entry = document.createElement('div');
+  entry.className = `entry ${who}-entry`;
+  const label = document.createElement('span');
+  label.className = `who ${who}`;
+  label.textContent = who === 'eliza' ? 'ELIZA' : 'YOU';
+  const txt = document.createElement('span');
+  txt.className = 'text';
+  txt.textContent = text;
+  entry.appendChild(label);
+  entry.appendChild(txt);
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+
+function send() {
+  const el = document.getElementById('input');
+  const text = el.value.trim();
+  if (!text) return;
+  addEntry(text, 'user');
+  el.value = '';
+  setTimeout(() => addEntry(elizaRespond(text), 'eliza'), 220);
+}
+
+function resetSession() {
+  scriptIndices = {};
+  fallbackIdx = 0;
+  memoryStore = [];
+  const log = document.getElementById('log');
+  while (log.firstChild) log.removeChild(log.firstChild);
+  setTimeout(() => addEntry("Hello. How are you feeling today?", 'eliza'), 100);
+}
+
+document.getElementById('send').addEventListener('click', send);
+document.getElementById('input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') send();
+});
+document.getElementById('dismiss-btn').addEventListener('click', () => {
+  document.getElementById('context').classList.add('hidden');
+});
+document.getElementById('reset-btn').addEventListener('click', resetSession);
+
+addEntry("Hello. How are you feeling today?", 'eliza');
+</script>
+</body>
+</html>
